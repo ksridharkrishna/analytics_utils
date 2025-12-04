@@ -478,3 +478,226 @@ def get_ccta_by(df,
     result = result.sort_values('ccta_count', ascending=False).reset_index(drop=True)
     
     return result
+
+def get_ffrct(df, start_month=None, start_year=None, end_month=None, end_year=None):
+    """
+    Calculate the number of unique FFRct cases (hf_id) for a given time period.
+    
+    FFRct cases are identified by:
+    - Commercial cases with latest submission
+    - Completed, RCAG holding, or returned state
+    - Specific FFRct product offerings
+    - Revenue generating
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        The main dataframe containing case data. Must have columns:
+        - 'total_commercial', 'latest_submission', 'case_state'
+        - 'Case-Specific Product Offerings', 'revenue_generating'
+        - 'year_billing_timestamp_local', 'month_billing_timestamp_local'
+        - 'hf_id'
+        
+    start_month : int, optional (1-12)
+        Starting month (inclusive). If None, no start date filter applied.
+        
+    start_year : int, optional
+        Starting year. Required if start_month is provided.
+        
+    end_month : int, optional (1-12)
+        Ending month (inclusive). If None, no end date filter applied.
+        
+    end_year : int, optional
+        Ending year. Required if end_month is provided.
+    
+    Returns:
+    --------
+    int
+        Count of unique FFRct cases (hf_id) matching the criteria
+    
+    Raises:
+    -------
+    ValueError
+        If start_month is provided without start_year
+        If end_month is provided without end_year
+    
+    Example Usage:
+    --------------
+    # Get all FFRct cases for 2024
+    count = get_ffrct(df, start_year=2024, end_year=2024)
+    
+    # Get FFRct cases for Q1 2024
+    count = get_ffrct(df, start_month=1, start_year=2024, 
+                      end_month=3, end_year=2024)
+    
+    # Get FFRct cases from July 2024 onwards
+    count = get_ffrct(df, start_month=7, start_year=2024)
+    
+    # Get all FFRct cases (no date filter)
+    count = get_ffrct(df)
+    
+    Notes:
+    ------
+    Requires year_billing_timestamp_local and month_billing_timestamp_local 
+    columns in the dataframe. These can be created from billing_timestamp_local:
+        df['year_billing_timestamp_local'] = df['billing_timestamp_local'].dt.year
+        df['month_billing_timestamp_local'] = df['billing_timestamp_local'].dt.month
+    """
+    # Validate parameters
+    if start_month is not None and start_year is None:
+        raise ValueError("start_year is required when start_month is provided")
+    if end_month is not None and end_year is None:
+        raise ValueError("end_year is required when end_month is provided")
+    
+    # Build base FFRct filter
+    ffrct_filter = (
+        (df['total_commercial'] == True) &
+        (df['latest_submission'] == True) &
+        (df['case_state'].isin(['COMPLETED', 'RCAG_HOLDING', 'RETURNED'])) &
+        (df['Case-Specific Product Offerings'].isin([
+            'CCTA/FFRct Only', 
+            'Billable: Plaque + FFRct', 
+            'Non-Billable: Plaque + FFrct'
+        ])) &
+        (df['revenue_generating'] == True)
+    )
+    
+    # Apply start date filter if provided
+    if start_year is not None:
+        if start_month is not None:
+            # Filter from start_month/start_year onwards
+            ffrct_filter = ffrct_filter & (
+                (df['year_billing_timestamp_local'] > start_year) |
+                ((df['year_billing_timestamp_local'] == start_year) & 
+                 (df['month_billing_timestamp_local'] >= start_month))
+            )
+        else:
+            # Filter from start_year onwards (all months)
+            ffrct_filter = ffrct_filter & (
+                df['year_billing_timestamp_local'] >= start_year
+            )
+    
+    # Apply end date filter if provided
+    if end_year is not None:
+        if end_month is not None:
+            # Filter up to end_month/end_year
+            ffrct_filter = ffrct_filter & (
+                (df['year_billing_timestamp_local'] < end_year) |
+                ((df['year_billing_timestamp_local'] == end_year) & 
+                 (df['month_billing_timestamp_local'] <= end_month))
+            )
+        else:
+            # Filter up to end_year (all months)
+            ffrct_filter = ffrct_filter & (
+                df['year_billing_timestamp_local'] <= end_year
+            )
+    
+    # Return count of unique FFRct cases
+    return df[ffrct_filter]['hf_id'].nunique()
+
+def get_ccta(df, start_month=None, start_year=None, end_month=None, end_year=None):
+    """
+    Calculate the number of unique CCTA cases (hf_id) for a given time period.
+    
+    CCTA cases are identified by:
+    - Commercial cases with latest submission
+    - Completed, RCAG holding, or returned state
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        The main dataframe containing case data. Must have columns:
+        - 'total_commercial', 'latest_submission', 'case_state'
+        - 'year_created_timestamp_local', 'month_created_timestamp_local'
+        - 'hf_id'
+        
+    start_month : int, optional (1-12)
+        Starting month (inclusive). If None, no start date filter applied.
+        
+    start_year : int, optional
+        Starting year. Required if start_month is provided.
+        
+    end_month : int, optional (1-12)
+        Ending month (inclusive). If None, no end date filter applied.
+        
+    end_year : int, optional
+        Ending year. Required if end_month is provided.
+    
+    Returns:
+    --------
+    int
+        Count of unique CCTA cases (hf_id) matching the criteria
+    
+    Raises:
+    -------
+    ValueError
+        If start_month is provided without start_year
+        If end_month is provided without end_year
+    
+    Example Usage:
+    --------------
+    # Get all CCTA cases for 2024
+    count = get_ccta(df, start_year=2024, end_year=2024)
+    
+    # Get CCTA cases for Q1 2024
+    count = get_ccta(df, start_month=1, start_year=2024, 
+                     end_month=3, end_year=2024)
+    
+    # Get CCTA cases from July 2024 onwards
+    count = get_ccta(df, start_month=7, start_year=2024)
+    
+    # Get all CCTA cases (no date filter)
+    count = get_ccta(df)
+    
+    Notes:
+    ------
+    Requires year_created_timestamp_local and month_created_timestamp_local 
+    columns in the dataframe. These can be created from created_timestamp_local:
+        df['year_created_timestamp_local'] = df['created_timestamp_local'].dt.year
+        df['month_created_timestamp_local'] = df['created_timestamp_local'].dt.month
+    """
+    # Validate parameters
+    if start_month is not None and start_year is None:
+        raise ValueError("start_year is required when start_month is provided")
+    if end_month is not None and end_year is None:
+        raise ValueError("end_year is required when end_month is provided")
+    
+    # Build base CCTA filter
+    ccta_filter = (
+        (df['total_commercial'] == True) & 
+        (df['latest_submission'] == True) &
+        (df['case_state'].isin(['COMPLETED', 'RCAG_HOLDING', 'RETURNED']))
+    )
+    
+    # Apply start date filter if provided
+    if start_year is not None:
+        if start_month is not None:
+            # Filter from start_month/start_year onwards
+            ccta_filter = ccta_filter & (
+                (df['year_created_timestamp_local'] > start_year) |
+                ((df['year_created_timestamp_local'] == start_year) & 
+                 (df['month_created_timestamp_local'] >= start_month))
+            )
+        else:
+            # Filter from start_year onwards (all months)
+            ccta_filter = ccta_filter & (
+                df['year_created_timestamp_local'] >= start_year
+            )
+    
+    # Apply end date filter if provided
+    if end_year is not None:
+        if end_month is not None:
+            # Filter up to end_month/end_year
+            ccta_filter = ccta_filter & (
+                (df['year_created_timestamp_local'] < end_year) |
+                ((df['year_created_timestamp_local'] == end_year) & 
+                 (df['month_created_timestamp_local'] <= end_month))
+            )
+        else:
+            # Filter up to end_year (all months)
+            ccta_filter = ccta_filter & (
+                df['year_created_timestamp_local'] <= end_year
+            )
+    
+    # Return count of unique CCTA cases
+    return df[ccta_filter]['hf_id'].nunique()
