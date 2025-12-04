@@ -19,7 +19,7 @@ def fetch_dataframe_in_chunks(cursor, query, chunk_size=100000):
             
         chunk_df = pd.DataFrame.from_records(rows, columns=[desc[0] for desc in cursor.description])
         chunks.append(chunk_df)
-        print(f"Fetched chunk with {len(chunk_df)} rows")
+        # print(f"Fetched chunk with {len(chunk_df)} rows")
     
     if chunks:
         return pd.concat(chunks, ignore_index=True)
