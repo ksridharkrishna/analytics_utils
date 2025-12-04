@@ -261,11 +261,15 @@ def change_date_format(df):
     return df
 
 def get_df(cursor,columns):
+    print('Pulling in Case Data...')
     query = f"SELECT {', '.join(columns)} FROM sg_analytics_schema.case_submissions_sga where regulatory_region IN ('US', 'NORTH_AMERICA');"
     df_redshift = fetch_dataframe_in_chunks(cursor, query)
+    print('Pulling SFDC Account Data...')
     sfdc_account = fetch_dataframe(cursor, "SELECT * FROM sg_analytics_schema.sfdc_accounts;")
+    print('Pulling in Funnel Data...')
     funnel = fetch_dataframe(cursor, "SELECT * FROM sg_analytics_schema.opportunity_funnel_sga_reports;")
 
+    print('Merging...')
     df_redshift = df_redshift.merge(
         sfdc_account[[
             "id", "plaque_claims_submitting_start_date__c",
@@ -277,6 +281,7 @@ def get_df(cursor,columns):
         how="left"
     )
 
+    print('Changing date formats...')
     df = change_date_format(df_redshift)
 
     return df
