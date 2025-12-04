@@ -479,7 +479,7 @@ def get_ccta_by(df,
     
     return result
 
-def get_ffrct(df, start_month=None, start_year=None, end_month=None, end_year=None):
+def get_ffrct(df, by='range', start_month=None, start_year=None, end_month=None, end_year=None):
     """
     Calculate the number of unique FFRct cases (hf_id) for a given time period.
     
@@ -497,18 +497,24 @@ def get_ffrct(df, start_month=None, start_year=None, end_month=None, end_year=No
         - 'Case-Specific Product Offerings', 'revenue_generating'
         - 'year_billing_timestamp_local', 'month_billing_timestamp_local'
         - 'hf_id'
+    
+    by : str, default='range'
+        Time period type. Options:
+        - 'month' : Single month (requires start_month and start_year)
+        - 'year' : Single year (requires start_year only)
+        - 'range' : Date range (requires all four parameters)
         
     start_month : int, optional (1-12)
-        Starting month (inclusive). If None, no start date filter applied.
+        Starting month (inclusive). Required if by='month' or by='range'.
         
     start_year : int, optional
-        Starting year. Required if start_month is provided.
+        Starting year. Required for all 'by' options.
         
     end_month : int, optional (1-12)
-        Ending month (inclusive). If None, no end date filter applied.
+        Ending month (inclusive). Required if by='range'.
         
     end_year : int, optional
-        Ending year. Required if end_month is provided.
+        Ending year. Required if by='range'.
     
     Returns:
     --------
@@ -518,23 +524,21 @@ def get_ffrct(df, start_month=None, start_year=None, end_month=None, end_year=No
     Raises:
     -------
     ValueError
-        If start_month is provided without start_year
-        If end_month is provided without end_year
+        If 'by' is not one of ['month', 'year', 'range']
+        If required parameters for the selected 'by' option are not provided
     
     Example Usage:
     --------------
-    # Get all FFRct cases for 2024
-    count = get_ffrct(df, start_year=2024, end_year=2024)
+    # Get FFRct cases for a specific month
+    count = get_ffrct(df, by='month', start_month=3, start_year=2024)
     
-    # Get FFRct cases for Q1 2024
-    count = get_ffrct(df, start_month=1, start_year=2024, 
+    # Get FFRct cases for an entire year
+    count = get_ffrct(df, by='year', start_year=2024)
+    
+    # Get FFRct cases for a date range
+    count = get_ffrct(df, by='range', 
+                      start_month=1, start_year=2024,
                       end_month=3, end_year=2024)
-    
-    # Get FFRct cases from July 2024 onwards
-    count = get_ffrct(df, start_month=7, start_year=2024)
-    
-    # Get all FFRct cases (no date filter)
-    count = get_ffrct(df)
     
     Notes:
     ------
@@ -543,11 +547,25 @@ def get_ffrct(df, start_month=None, start_year=None, end_month=None, end_year=No
         df['year_billing_timestamp_local'] = df['billing_timestamp_local'].dt.year
         df['month_billing_timestamp_local'] = df['billing_timestamp_local'].dt.month
     """
-    # Validate parameters
-    if start_month is not None and start_year is None:
-        raise ValueError("start_year is required when start_month is provided")
-    if end_month is not None and end_year is None:
-        raise ValueError("end_year is required when end_month is provided")
+    # Validate 'by' parameter
+    valid_by_options = ['month', 'year', 'range']
+    if by not in valid_by_options:
+        raise ValueError(f"'by' must be one of {valid_by_options}, got '{by}'")
+    
+    # Validate required parameters based on 'by' option
+    if by == 'month':
+        if start_month is None or start_year is None:
+            raise ValueError("'by=month' requires both start_month and start_year")
+        if end_month is not None or end_year is not None:
+            raise ValueError("'by=month' does not use end_month or end_year")
+    elif by == 'year':
+        if start_year is None:
+            raise ValueError("'by=year' requires start_year")
+        if start_month is not None or end_month is not None or end_year is not None:
+            raise ValueError("'by=year' only uses start_year")
+    elif by == 'range':
+        if start_month is None or start_year is None or end_month is None or end_year is None:
+            raise ValueError("'by=range' requires all four parameters: start_month, start_year, end_month, end_year")
     
     # Build base FFRct filter
     ffrct_filter = (
@@ -562,40 +580,37 @@ def get_ffrct(df, start_month=None, start_year=None, end_month=None, end_year=No
         (df['revenue_generating'] == True)
     )
     
-    # Apply start date filter if provided
-    if start_year is not None:
-        if start_month is not None:
-            # Filter from start_month/start_year onwards
-            ffrct_filter = ffrct_filter & (
-                (df['year_billing_timestamp_local'] > start_year) |
-                ((df['year_billing_timestamp_local'] == start_year) & 
-                 (df['month_billing_timestamp_local'] >= start_month))
-            )
-        else:
-            # Filter from start_year onwards (all months)
-            ffrct_filter = ffrct_filter & (
-                df['year_billing_timestamp_local'] >= start_year
-            )
-    
-    # Apply end date filter if provided
-    if end_year is not None:
-        if end_month is not None:
-            # Filter up to end_month/end_year
-            ffrct_filter = ffrct_filter & (
-                (df['year_billing_timestamp_local'] < end_year) |
-                ((df['year_billing_timestamp_local'] == end_year) & 
-                 (df['month_billing_timestamp_local'] <= end_month))
-            )
-        else:
-            # Filter up to end_year (all months)
-            ffrct_filter = ffrct_filter & (
-                df['year_billing_timestamp_local'] <= end_year
-            )
+    # Apply date filters based on 'by' option
+    if by == 'month':
+        # Filter for a specific month and year
+        ffrct_filter = ffrct_filter & (
+            (df['year_billing_timestamp_local'] == start_year) &
+            (df['month_billing_timestamp_local'] == start_month)
+        )
+    elif by == 'year':
+        # Filter for an entire year
+        ffrct_filter = ffrct_filter & (
+            df['year_billing_timestamp_local'] == start_year
+        )
+    elif by == 'range':
+        # Filter from start_month/start_year onwards
+        ffrct_filter = ffrct_filter & (
+            (df['year_billing_timestamp_local'] > start_year) |
+            ((df['year_billing_timestamp_local'] == start_year) & 
+             (df['month_billing_timestamp_local'] >= start_month))
+        )
+        # Filter up to end_month/end_year
+        ffrct_filter = ffrct_filter & (
+            (df['year_billing_timestamp_local'] < end_year) |
+            ((df['year_billing_timestamp_local'] == end_year) & 
+             (df['month_billing_timestamp_local'] <= end_month))
+        )
     
     # Return count of unique FFRct cases
     return df[ffrct_filter]['hf_id'].nunique()
 
-def get_ccta(df, start_month=None, start_year=None, end_month=None, end_year=None):
+
+def get_ccta(df, by='range', start_month=None, start_year=None, end_month=None, end_year=None):
     """
     Calculate the number of unique CCTA cases (hf_id) for a given time period.
     
@@ -610,18 +625,24 @@ def get_ccta(df, start_month=None, start_year=None, end_month=None, end_year=Non
         - 'total_commercial', 'latest_submission', 'case_state'
         - 'year_created_timestamp_local', 'month_created_timestamp_local'
         - 'hf_id'
+    
+    by : str, default='range'
+        Time period type. Options:
+        - 'month' : Single month (requires start_month and start_year)
+        - 'year' : Single year (requires start_year only)
+        - 'range' : Date range (requires all four parameters)
         
     start_month : int, optional (1-12)
-        Starting month (inclusive). If None, no start date filter applied.
+        Starting month (inclusive). Required if by='month' or by='range'.
         
     start_year : int, optional
-        Starting year. Required if start_month is provided.
+        Starting year. Required for all 'by' options.
         
     end_month : int, optional (1-12)
-        Ending month (inclusive). If None, no end date filter applied.
+        Ending month (inclusive). Required if by='range'.
         
     end_year : int, optional
-        Ending year. Required if end_month is provided.
+        Ending year. Required if by='range'.
     
     Returns:
     --------
@@ -631,23 +652,21 @@ def get_ccta(df, start_month=None, start_year=None, end_month=None, end_year=Non
     Raises:
     -------
     ValueError
-        If start_month is provided without start_year
-        If end_month is provided without end_year
+        If 'by' is not one of ['month', 'year', 'range']
+        If required parameters for the selected 'by' option are not provided
     
     Example Usage:
     --------------
-    # Get all CCTA cases for 2024
-    count = get_ccta(df, start_year=2024, end_year=2024)
+    # Get CCTA cases for a specific month
+    count = get_ccta(df, by='month', start_month=3, start_year=2024)
     
-    # Get CCTA cases for Q1 2024
-    count = get_ccta(df, start_month=1, start_year=2024, 
+    # Get CCTA cases for an entire year
+    count = get_ccta(df, by='year', start_year=2024)
+    
+    # Get CCTA cases for a date range
+    count = get_ccta(df, by='range', 
+                     start_month=1, start_year=2024,
                      end_month=3, end_year=2024)
-    
-    # Get CCTA cases from July 2024 onwards
-    count = get_ccta(df, start_month=7, start_year=2024)
-    
-    # Get all CCTA cases (no date filter)
-    count = get_ccta(df)
     
     Notes:
     ------
@@ -656,11 +675,25 @@ def get_ccta(df, start_month=None, start_year=None, end_month=None, end_year=Non
         df['year_created_timestamp_local'] = df['created_timestamp_local'].dt.year
         df['month_created_timestamp_local'] = df['created_timestamp_local'].dt.month
     """
-    # Validate parameters
-    if start_month is not None and start_year is None:
-        raise ValueError("start_year is required when start_month is provided")
-    if end_month is not None and end_year is None:
-        raise ValueError("end_year is required when end_month is provided")
+    # Validate 'by' parameter
+    valid_by_options = ['month', 'year', 'range']
+    if by not in valid_by_options:
+        raise ValueError(f"'by' must be one of {valid_by_options}, got '{by}'")
+    
+    # Validate required parameters based on 'by' option
+    if by == 'month':
+        if start_month is None or start_year is None:
+            raise ValueError("'by=month' requires both start_month and start_year")
+        if end_month is not None or end_year is not None:
+            raise ValueError("'by=month' does not use end_month or end_year")
+    elif by == 'year':
+        if start_year is None:
+            raise ValueError("'by=year' requires start_year")
+        if start_month is not None or end_month is not None or end_year is not None:
+            raise ValueError("'by=year' only uses start_year")
+    elif by == 'range':
+        if start_month is None or start_year is None or end_month is None or end_year is None:
+            raise ValueError("'by=range' requires all four parameters: start_month, start_year, end_month, end_year")
     
     # Build base CCTA filter
     ccta_filter = (
@@ -669,35 +702,31 @@ def get_ccta(df, start_month=None, start_year=None, end_month=None, end_year=Non
         (df['case_state'].isin(['COMPLETED', 'RCAG_HOLDING', 'RETURNED']))
     )
     
-    # Apply start date filter if provided
-    if start_year is not None:
-        if start_month is not None:
-            # Filter from start_month/start_year onwards
-            ccta_filter = ccta_filter & (
-                (df['year_created_timestamp_local'] > start_year) |
-                ((df['year_created_timestamp_local'] == start_year) & 
-                 (df['month_created_timestamp_local'] >= start_month))
-            )
-        else:
-            # Filter from start_year onwards (all months)
-            ccta_filter = ccta_filter & (
-                df['year_created_timestamp_local'] >= start_year
-            )
-    
-    # Apply end date filter if provided
-    if end_year is not None:
-        if end_month is not None:
-            # Filter up to end_month/end_year
-            ccta_filter = ccta_filter & (
-                (df['year_created_timestamp_local'] < end_year) |
-                ((df['year_created_timestamp_local'] == end_year) & 
-                 (df['month_created_timestamp_local'] <= end_month))
-            )
-        else:
-            # Filter up to end_year (all months)
-            ccta_filter = ccta_filter & (
-                df['year_created_timestamp_local'] <= end_year
-            )
+    # Apply date filters based on 'by' option
+    if by == 'month':
+        # Filter for a specific month and year
+        ccta_filter = ccta_filter & (
+            (df['year_created_timestamp_local'] == start_year) &
+            (df['month_created_timestamp_local'] == start_month)
+        )
+    elif by == 'year':
+        # Filter for an entire year
+        ccta_filter = ccta_filter & (
+            df['year_created_timestamp_local'] == start_year
+        )
+    elif by == 'range':
+        # Filter from start_month/start_year onwards
+        ccta_filter = ccta_filter & (
+            (df['year_created_timestamp_local'] > start_year) |
+            ((df['year_created_timestamp_local'] == start_year) & 
+             (df['month_created_timestamp_local'] >= start_month))
+        )
+        # Filter up to end_month/end_year
+        ccta_filter = ccta_filter & (
+            (df['year_created_timestamp_local'] < end_year) |
+            ((df['year_created_timestamp_local'] == end_year) & 
+             (df['month_created_timestamp_local'] <= end_month))
+        )
     
     # Return count of unique CCTA cases
     return df[ccta_filter]['hf_id'].nunique()
