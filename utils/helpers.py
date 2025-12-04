@@ -184,6 +184,81 @@ def create_product_offerings(df):
     
     return df_result
 
+def create_ffrct_workflow(df: pd.DataFrame,
+                             output_col: str = "Case-Specific FFRct Workflow") -> pd.DataFrame:
+    """
+    Add a column with values:
+    "CCTA FPA", "HF One", "Direct", or "Standard"
+    based on created_at_local and program date fields.
+    """
+    df = df.copy()
+
+    # Ensure datetime
+    date_cols = [
+        "created_at_local",
+        "sfdc_ccta_fpa_start_date",
+        "sfdc_hf_one_start_date",
+        "hf_one_end_date",
+        "hf_direct_start_date",
+        "hf_direct_end_date",
+        "send_all_end_date",
+    ]
+    for c in date_cols:
+        df[c] = pd.to_datetime(df[c], errors="coerce")
+
+    created = df["created_at_local"]
+
+    cond_ccta_fpa = (created >= df["sfdc_ccta_fpa_start_date"])
+
+    cond_hf_one_with_end = (
+        (created >= df["sfdc_hf_one_start_date"]) &
+        df["hf_one_end_date"].notna() &
+        (created <= df["hf_one_end_date"])
+    )
+
+    cond_hf_one_no_end = (
+        (created >= df["sfdc_hf_one_start_date"]) &
+        df["hf_one_end_date"].isna()
+    )
+
+    cond_direct_with_end = (
+        (created >= df["hf_direct_start_date"]) &
+        df["hf_direct_end_date"].notna() &
+        (created <= df["hf_direct_end_date"])
+    )
+
+    cond_direct_no_end = (
+        (created >= df["hf_direct_start_date"]) &
+        df["hf_direct_end_date"].isna()
+    )
+
+    cond_standard = (
+        df["send_all_end_date"].notna() &
+        (created > df["send_all_end_date"])
+    )
+
+    df[output_col] = np.select(
+        condlist=[
+            cond_ccta_fpa,
+            cond_hf_one_with_end,
+            cond_hf_one_no_end,
+            cond_direct_with_end,
+            cond_direct_no_end,
+            cond_standard,
+        ],
+        choicelist=[
+            "CCTA FPA",
+            "HF One",
+            "HF One",
+            "Direct",
+            "Direct",
+            "Standard",
+        ],
+        default="Standard",
+    )
+
+    return df
+
 def get_df(cursor,columns):
     print('Pulling in Case Data...')
     query = f"SELECT {', '.join(columns)} FROM sg_analytics_schema.case_submissions_sga where regulatory_region IN ('US', 'NORTH_AMERICA');"
@@ -236,6 +311,7 @@ def get_df(cursor,columns):
 
     df = create_plaque_billing_category(df)
     df = create_product_offerings(df)
+    df = create_ffrct_workflow(df)
 
     return df
 
@@ -609,7 +685,6 @@ def get_ffrct(df, by='range', start_month=None, start_year=None, end_month=None,
     # Return count of unique FFRct cases
     return df[ffrct_filter]['hf_id'].nunique()
 
-
 def get_ccta(df, by='range', start_month=None, start_year=None, end_month=None, end_year=None):
     """
     Calculate the number of unique CCTA cases (hf_id) for a given time period.
@@ -730,3 +805,25 @@ def get_ccta(df, by='range', start_month=None, start_year=None, end_month=None, 
     
     # Return count of unique CCTA cases
     return df[ccta_filter]['hf_id'].nunique()
+
+def get_sfdc_accounts(cursor):
+    sfdc_account = fetch_dataframe(cursor, "SELECT * FROM sg_analytics_schema.sfdc_accounts;")
+    return sfdc_account
+
+def calculate_active_sites(sfdc_account, prev_month, prev_year):
+    initial_date = pd.to_datetime(f'{prev_year}-{prev_month:02d}-01') 
+    final_date = initial_date + relativedelta(months=1, day=1)
+    
+    sfdc_account["cohort_site_creation"] = pd.to_datetime(sfdc_account["training_date__c"]).dt.strftime('%m-%Y')
+    result = sfdc_account[
+    ~sfdc_account['name'].str.contains('delete|duplicate|Delete_Duplicate|Test|test', case=False) &
+    (sfdc_account["shippingcountry"] == "United States") &
+    (sfdc_account["active__c"].isin(['Active']))&
+    (sfdc_account["category__c"].isin(['Commercial', 'Commercial and Clinical']))&
+    (sfdc_account["ffrct_workflow__c"].isin(['HF ONE','Standard','Direct Only','CCTA FPA'])) &
+    (sfdc_account["type"].isin(['Hospital', 'Imaging Center/OPIC', 'Health System OPIC','Physician Practice','Referring Group'
+    ]))]
+
+    # Get unique sites before final_date
+    final_date_sites = result[result["training_date__c"].astype(str) < str(final_date)]["id"].nunique()
+    return final_date_sites
