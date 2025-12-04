@@ -187,7 +187,8 @@ def get_ccta_by(df,
     
     ccta_filter = (
         (df['total_commercial'] == True) & 
-        (df['latest_submission'] == True)
+        (df['latest_submission'] == True) &
+        (df['case_state'].isin(['COMPLETED', 'RCAG_HOLDING', 'RETURNED']))
     )
     
     filtered_df = df[ccta_filter].copy()
@@ -216,3 +217,66 @@ def get_ccta_by(df,
     result = result.sort_values('ccta_count', ascending=False).reset_index(drop=True)
     
     return result
+
+def fetch_dataframe_in_chunks(cursor, query, chunk_size=100000):
+    cursor.execute(query)
+    
+    chunks = []
+    while True:
+        rows = cursor.fetchmany(chunk_size)
+        if not rows:
+            break
+            
+        chunk_df = pd.DataFrame.from_records(rows, columns=[desc[0] for desc in cursor.description])
+        chunks.append(chunk_df)
+        print(f"Fetched chunk with {len(chunk_df)} rows")
+    
+    if chunks:
+        return pd.concat(chunks, ignore_index=True)
+    return pd.DataFrame(columns=[])
+
+def fetch_dataframe(cursor, query):
+    """Execute a query and fetch results as a DataFrame using psycopg2."""
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    columns = [desc[0] for desc in cursor.description]
+    
+    return pd.DataFrame(rows, columns=columns)
+
+def change_date_format(df):
+    """Vectorized date format conversion."""
+    datetime_columns = [
+        "sfdc_ccta_fpa_end_date", "sfdc_ccta_fpa_start_date",
+        "sfdc_hf_one_start_date", "hf_one_end_date",
+        "hf_direct_end_date", "hf_direct_start_date",
+        "plaque_claims_submitting_start_date__c", "plaque_claims_submitting_end_date__c",
+        "sfdc_plaque_commercial_start_date", "sfdc_plaque_commercial_end_date",
+        "plaque_pace_program_start_date__c", "plaque_pace_program_end_date__c",
+        "plaque_ordered_at_local", "created_at_local"
+    ]
+    
+    cols_to_convert = [col for col in datetime_columns if col in df.columns]
+    df[cols_to_convert] = df[cols_to_convert].apply(pd.to_datetime, errors='coerce')
+    
+    return df
+
+def get_df(cursor,columns):
+    query = f"SELECT {', '.join(columns)} FROM sg_analytics_schema.case_submissions_sga where regulatory_region IN ('US', 'NORTH_AMERICA');"
+    df_redshift = fetch_dataframe_in_chunks(cursor, query)
+    sfdc_account = fetch_dataframe(cursor, "SELECT * FROM sg_analytics_schema.sfdc_accounts;")
+    funnel = fetch_dataframe(cursor, "SELECT * FROM sg_analytics_schema.opportunity_funnel_sga_reports;")
+
+    df_redshift = df_redshift.merge(
+        sfdc_account[[
+            "id", "plaque_claims_submitting_start_date__c",
+            "plaque_claims_submitting_end_date__c", "plaque_pace_program_start_date__c",
+            "plaque_pace_program_end_date__c"
+        ]],
+        left_on="salesforce_id",
+        right_on="id",
+        how="left"
+    )
+
+    df = change_date_format(df_redshift)
+
+    return df
