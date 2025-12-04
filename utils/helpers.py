@@ -443,9 +443,9 @@ def get_ccta_by(df,
         if start_month is not None:
             # Filter by year and month
             ccta_filter = ccta_filter & (
-                (df['year_created_at_local'] > start_year) |
-                ((df['year_created_at_local'] == start_year) & 
-                 (df['month_created_at_local'] >= start_month))
+                (df['year_created_timestamp_local'] > start_year) |
+                ((df['year_created_timestamp_local'] == start_year) & 
+                 (df['month_created_timestamp_local'] >= start_month))
             )
         else:
             # Filter by year only
@@ -455,13 +455,13 @@ def get_ccta_by(df,
         if end_month is not None:
             # Filter by year and month
             ccta_filter = ccta_filter & (
-                (df['year_created_at_local'] < end_year) |
-                ((df['year_created_at_local'] == end_year) & 
-                 (df['month_created_at_local'] <= end_month))
+                (df['year_created_timestamp_local'] < end_year) |
+                ((df['year_created_timestamp_local'] == end_year) & 
+                 (df['month_created_timestamp_local'] <= end_month))
             )
         else:
             # Filter by year only
-            ccta_filter = ccta_filter & (df['year_created_at_local'] <= end_year)
+            ccta_filter = ccta_filter & (df['year_created_timestamp_local'] <= end_year)
     
     filtered_df = df[ccta_filter]
     
