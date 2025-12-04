@@ -260,6 +260,140 @@ def change_date_format(df):
     
     return df
 
+def create_plaque_billing_category(df):
+    df_result = df.copy()
+    df_result['Case-Specific Plaque Billing Category'] = 'Other'
+    
+    plaque_ordered = 'plaque_ordered_at_local'
+    
+    mask_no_plaque = df_result[plaque_ordered].isna()
+    df_result.loc[mask_no_plaque, 'Case-Specific Plaque Billing Category'] = 'No Plaque Ordered'
+    
+    # Condition 2: FPA EA Eval (90 day Eval)
+    if 'plaque_fpa_ea_eval_start_date__c' in df_result.columns and \
+       'plaque_fpa_ea_eval_end_date__c' in df_result.columns and \
+       'plaque_early_adopt_type__c' in df_result.columns:
+        
+        mask_ea_eval = (
+            (df_result[plaque_ordered] >= df_result['plaque_fpa_ea_eval_start_date__c']) &
+            (df_result[plaque_ordered] <= df_result['plaque_fpa_ea_eval_end_date__c']) &
+            (df_result['plaque_early_adopt_type__c'] == '90 day Eval')
+        )
+        df_result.loc[mask_ea_eval, 'Case-Specific Plaque Billing Category'] = 'Non-Billable: EA Eval'
+    
+    # Condition 3 & 4: Commercial Plaque Program
+    if 'sfdc_plaque_commercial_start_date' in df_result.columns and \
+       'sfdc_plaque_commercial_end_date' in df_result.columns and \
+       'sfdc_plaque_program' in df_result.columns:
+        
+        # With end date
+        mask_commercial_with_end = (
+            (df_result[plaque_ordered] >= df_result['sfdc_plaque_commercial_start_date']) &
+            (df_result['sfdc_plaque_commercial_end_date'].notna()) &
+            (df_result[plaque_ordered] < df_result['sfdc_plaque_commercial_end_date'])
+        )
+        df_result.loc[mask_commercial_with_end, 'Case-Specific Plaque Billing Category'] = \
+            'Commercial: ' + df_result.loc[mask_commercial_with_end, 'sfdc_plaque_program'].astype(str)
+        
+        # Without end date (ongoing)
+        mask_commercial_no_end = (
+            (df_result[plaque_ordered] >= df_result['sfdc_plaque_commercial_start_date']) &
+            (df_result['sfdc_plaque_commercial_end_date'].isna())
+        )
+        df_result.loc[mask_commercial_no_end, 'Case-Specific Plaque Billing Category'] = \
+            'Commercial: ' + df_result.loc[mask_commercial_no_end, 'sfdc_plaque_program'].astype(str)
+    
+    # Condition 5 & 6: Non-Billable PACE Program
+    if 'plaque_pace_program_start_date__c' in df_result.columns and \
+       'plaque_pace_program_end_date__c' in df_result.columns:
+        
+        # With end date
+        mask_pace_with_end = (
+            (df_result[plaque_ordered] >= df_result['plaque_pace_program_start_date__c']) &
+            (df_result['plaque_pace_program_end_date__c'].notna()) &
+            (df_result[plaque_ordered] <= df_result['plaque_pace_program_end_date__c'])
+        )
+        df_result.loc[mask_pace_with_end, 'Case-Specific Plaque Billing Category'] = 'Non-Billable: PACE'
+        
+        # Without end date (ongoing)
+        mask_pace_no_end = (
+            (df_result[plaque_ordered] >= df_result['plaque_pace_program_start_date__c']) &
+            (df_result['plaque_pace_program_end_date__c'].isna())
+        )
+        df_result.loc[mask_pace_no_end, 'Case-Specific Plaque Billing Category'] = 'Non-Billable: PACE'
+    
+    # Condition 7 & 8: Registry Programs
+    if 'plaque_registry_start_date__c' in df_result.columns and \
+       'plaque_registry_end_date__c' in df_result.columns and \
+       'plaque_registry_program__c' in df_result.columns:
+        
+        # With end date
+        mask_registry_with_end = (
+            (df_result[plaque_ordered] >= df_result['plaque_registry_start_date__c']) &
+            (df_result['plaque_registry_end_date__c'].notna()) &
+            (df_result[plaque_ordered] <= df_result['plaque_registry_end_date__c'])
+        )
+        df_result.loc[mask_registry_with_end, 'Case-Specific Plaque Billing Category'] = \
+            'Non-Billable: ' + df_result.loc[mask_registry_with_end, 'plaque_registry_program__c'].astype(str)
+        
+        # Without end date (ongoing)
+        mask_registry_no_end = (
+            (df_result[plaque_ordered] >= df_result['plaque_registry_start_date__c']) &
+            (df_result['plaque_registry_end_date__c'].isna())
+        )
+        df_result.loc[mask_registry_no_end, 'Case-Specific Plaque Billing Category'] = \
+            'Non-Billable: ' + df_result.loc[mask_registry_no_end, 'plaque_registry_program__c'].astype(str)
+    
+    return df_result
+
+def create_product_offerings(df):
+    if 'Case-Specific Plaque Billing Category' not in df.columns:
+        raise ValueError("'Case-Specific Plaque Billing Category' column must exist first")
+    
+    df_result = df.copy()
+    
+    df_result['Case-Specific Product Offerings'] = 'Fix'
+    
+    plaque_ordered = 'plaque_ordered_at_local'
+    billing_timestamp = 'billing_timestamp_local'
+    plaque_category = 'Case-Specific Plaque Billing Category'
+    
+    # Condition 1: No Plaque Ordered
+    mask_no_plaque = df_result[plaque_ordered].isna()
+    df_result.loc[mask_no_plaque, 'Case-Specific Product Offerings'] = 'CCTA/FFRct Only'
+    
+    # Condition 2: Commercial with Billing (Plaque + FFRct)
+    mask_commercial_with_billing = (
+        df_result[plaque_category].str.contains('Commercial', na=False) &
+        df_result[billing_timestamp].notna()
+    )
+    df_result.loc[mask_commercial_with_billing, 'Case-Specific Product Offerings'] = 'Billable: Plaque + FFRct'
+    
+    # Condition 3: Commercial without Billing (Plaque-Only)
+    mask_commercial_no_billing = (
+        df_result[plaque_category].str.contains('Commercial', na=False) &
+        df_result[billing_timestamp].isna()
+    )
+    df_result.loc[mask_commercial_no_billing, 'Case-Specific Product Offerings'] = 'Billable: Plaque-Only'
+    
+    # Condition 4: Non-Billable or Other with Billing (Plaque + FFRct)
+    mask_nonbillable_with_billing = (
+        (df_result[plaque_category].str.contains('Non-Billable', na=False) | 
+         df_result[plaque_category].str.contains('Other', na=False)) &
+        df_result[billing_timestamp].notna()
+    )
+    df_result.loc[mask_nonbillable_with_billing, 'Case-Specific Product Offerings'] = 'Non-Billable: Plaque + FFrct'
+    
+    # Condition 5: Non-Billable or Other without Billing (Plaque-Only)
+    mask_nonbillable_no_billing = (
+        (df_result[plaque_category].str.contains('Non-Billable', na=False) | 
+         df_result[plaque_category].str.contains('Other', na=False)) &
+        df_result[billing_timestamp].isna()
+    )
+    df_result.loc[mask_nonbillable_no_billing, 'Case-Specific Product Offerings'] = 'Non-Billable: Plaque-Only'
+    
+    return df_result
+
 def get_df(cursor,columns):
     print('Pulling in Case Data...')
     query = f"SELECT {', '.join(columns)} FROM sg_analytics_schema.case_submissions_sga where regulatory_region IN ('US', 'NORTH_AMERICA');"
@@ -283,5 +417,34 @@ def get_df(cursor,columns):
 
     print('Changing date formats...')
     df = change_date_format(df_redshift)
+
+    print('Adding custom fields...')
+    df['total_commercial'] = (df['stack'] == 'prod01') & (df['case_type'] == 'COMMERCIAL')
+    df['latest_submission'] = (df['uuid'] == df['canonical_data_id'])
+    df["is_perform_ffrct_enabled"] = df["order_is_active"].notna()
+    df['is_ordered'] = (df["is_perform_ffrct_enabled"] & df['ordered_at'].notna()) | (~df["is_perform_ffrct_enabled"])
+    df['revenue_generating'] = (
+        df['total_commercial'] & 
+        (df['stack'] == "prod01") & 
+        (df['billing_type'] != "FREE") & 
+        (df['case_state'] == "COMPLETED") & 
+        (df['is_ordered'])
+    )
+    df['billing_timestamp_local'] = np.where(
+        df["is_perform_ffrct_enabled"],
+        df["ordered_at_local"],
+        df["terminal_state_timestamp_local"]
+    )
+
+    billing_dt = pd.to_datetime(df["billing_timestamp_local"])
+    created_dt = pd.to_datetime(df["created_at_local"])
+
+    df["month_billing_timestamp_local"] = billing_dt.dt.month
+    df["year_billing_timestamp_local"] = billing_dt.dt.year
+    df["month_created_timestamp_local"] = created_dt.dt.month
+    df["year_created_timestamp_local"] = created_dt.dt.year
+
+    df = create_plaque_billing_category(df)
+    df = create_product_offerings(df)
 
     return df
