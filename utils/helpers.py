@@ -317,10 +317,8 @@ def get_df(cursor,columns):
 
 def get_ffrct_by(df, 
                     group_by='salesforce_id',
-                    start_month=None, 
-                    start_year=None, 
-                    end_month=None, 
-                    end_year=None):
+                    start_date=None, 
+                    end_date=None):
     """
     Calculate the number of unique FFRct cases (hf_id) for a given grouping and time period.
     
@@ -335,17 +333,13 @@ def get_ffrct_by(df,
         - 'site_slug' : Group by Site Slug (includes site_name)
         - 'institution_name' : Group by Institution Name
         
-    start_month : int, optional (1-12)
-        Starting month (inclusive). If None, no start date filter applied.
+    start_date : str or datetime, optional
+        Starting date (inclusive). Format: 'YYYY-MM-DD' or 'M/D/YYYY'
+        If None, no start date filter applied.
         
-    start_year : int, optional
-        Starting year. Required if start_month is provided.
-        
-    end_month : int, optional (1-12)
-        Ending month (inclusive). If None, no end date filter applied.
-        
-    end_year : int, optional
-        Ending year. Required if end_month is provided.
+    end_date : str or datetime, optional
+        Ending date (inclusive). Format: 'YYYY-MM-DD' or 'M/D/YYYY'
+        If None, no end date filter applied.
     
     Returns:
     --------
@@ -358,33 +352,29 @@ def get_ffrct_by(df,
     
     Example Usage:
     --------------
-    # Get FFRct count by Salesforce ID for Jan 2024 - Mar 2024
+    # Get FFRct count by Salesforce ID for specific date range
     result = get_ffrct_by(df, 
                           group_by='salesforce_id',
-                          start_month=1, start_year=2024,
-                          end_month=3, end_year=2024)
+                          start_date='1/20/2025',
+                          end_date='1/31/2025')
     # Returns: salesforce_id, sfdc_account_name, ffrct_count
     
     # Get FFRct count by Site Slug for all of 2024
     result = get_ffrct_by(df,
                           group_by='site_slug', 
-                          start_month=1, start_year=2024,
-                          end_month=12, end_year=2024)
+                          start_date='2024-01-01',
+                          end_date='2024-12-31')
     # Returns: site_slug, site_name, ffrct_count
     
     # Get FFRct count by Institution with no date filter
     result = get_ffrct_by(df, group_by='institution_name')
     # Returns: institution_name, ffrct_count
     """
+    import pandas as pd
     
     valid_groups = ['salesforce_id', 'site_slug', 'institution_name']
     if group_by not in valid_groups:
         raise ValueError(f"group_by must be one of {valid_groups}")
-    
-    if start_month is not None and start_year is None:
-        raise ValueError("start_year is required when start_month is provided")
-    if end_month is not None and end_year is None:
-        raise ValueError("end_year is required when end_month is provided")
     
     # Base filter
     ffrct_filter = (
@@ -396,29 +386,19 @@ def get_ffrct_by(df,
     )
     
     # Add date filters if provided
-    if start_year is not None:
-        if start_month is not None:
-            # Filter by year and month
-            ffrct_filter = ffrct_filter & (
-                (df['year_billing_timestamp_local'] > start_year) |
-                ((df['year_billing_timestamp_local'] == start_year) & 
-                 (df['month_billing_timestamp_local'] >= start_month))
-            )
-        else:
-            # Filter by year only
-            ffrct_filter = ffrct_filter & (df['year_billing_timestamp_local'] >= start_year)
+    # Assuming your dataframe has a 'billing_timestamp_local' column (datetime)
+    # Adjust the column name if it's different
+    date_column = 'billing_timestamp_local'  # Change this to match your actual date column
     
-    if end_year is not None:
-        if end_month is not None:
-            # Filter by year and month
-            ffrct_filter = ffrct_filter & (
-                (df['year_billing_timestamp_local'] < end_year) |
-                ((df['year_billing_timestamp_local'] == end_year) & 
-                 (df['month_billing_timestamp_local'] <= end_month))
-            )
-        else:
-            # Filter by year only
-            ffrct_filter = ffrct_filter & (df['year_billing_timestamp_local'] <= end_year)
+    if start_date is not None:
+        start_dt = pd.to_datetime(start_date)
+        ffrct_filter = ffrct_filter & (df[date_column] >= start_dt)
+    
+    if end_date is not None:
+        end_dt = pd.to_datetime(end_date)
+        # Add one day and use < to make end_date inclusive
+        end_dt = end_dt + pd.Timedelta(days=1)
+        ffrct_filter = ffrct_filter & (df[date_column] < end_dt)
     
     filtered_df = df[ffrct_filter]
     
@@ -438,10 +418,8 @@ def get_ffrct_by(df,
 
 def get_ccta_by(df, 
                 group_by='salesforce_id',
-                start_month=None, 
-                start_year=None, 
-                end_month=None, 
-                end_year=None):
+                start_date=None, 
+                end_date=None):
     """
     Calculate the number of unique CCTA cases (hf_id) for a given grouping and time period.
     
@@ -456,17 +434,13 @@ def get_ccta_by(df,
         - 'site_slug' : Group by Site Slug (includes site_name)
         - 'institution_name' : Group by Institution Name
         
-    start_month : int, optional (1-12)
-        Starting month (inclusive). If None, no start date filter applied.
+    start_date : str or datetime, optional
+        Starting date (inclusive). Format: 'YYYY-MM-DD' or 'M/D/YYYY'
+        If None, no start date filter applied.
         
-    start_year : int, optional
-        Starting year. Required if start_month is provided.
-        
-    end_month : int, optional (1-12)
-        Ending month (inclusive). If None, no end date filter applied.
-        
-    end_year : int, optional
-        Ending year. Required if end_month is provided.
+    end_date : str or datetime, optional
+        Ending date (inclusive). Format: 'YYYY-MM-DD' or 'M/D/YYYY'
+        If None, no end date filter applied.
     
     Returns:
     --------
@@ -479,33 +453,29 @@ def get_ccta_by(df,
     
     Example Usage:
     --------------
-    # Get CCTA count by Salesforce ID for Jan 2024 - Mar 2024
+    # Get CCTA count by Salesforce ID for specific date range
     result = get_ccta_by(df, 
                          group_by='salesforce_id',
-                         start_month=1, start_year=2024,
-                         end_month=3, end_year=2024)
+                         start_date='1/20/2025',
+                         end_date='1/31/2025')
     # Returns: salesforce_id, sfdc_account_name, ccta_count
     
     # Get CCTA count by Site Slug for all of 2024
     result = get_ccta_by(df,
                          group_by='site_slug', 
-                         start_month=1, start_year=2024,
-                         end_month=12, end_year=2024)
+                         start_date='2024-01-01',
+                         end_date='2024-12-31')
     # Returns: site_slug, site_name, ccta_count
     
     # Get CCTA count by Institution with no date filter
     result = get_ccta_by(df, group_by='institution_name')
     # Returns: institution_name, ccta_count
     """
+    import pandas as pd
     
     valid_groups = ['salesforce_id', 'site_slug', 'institution_name']
     if group_by not in valid_groups:
         raise ValueError(f"group_by must be one of {valid_groups}")
-    
-    if start_month is not None and start_year is None:
-        raise ValueError("start_year is required when start_month is provided")
-    if end_month is not None and end_year is None:
-        raise ValueError("end_year is required when end_month is provided")
     
     # Base filter
     ccta_filter = (
@@ -515,29 +485,19 @@ def get_ccta_by(df,
     )
     
     # Add date filters if provided
-    if start_year is not None:
-        if start_month is not None:
-            # Filter by year and month
-            ccta_filter = ccta_filter & (
-                (df['year_created_timestamp_local'] > start_year) |
-                ((df['year_created_timestamp_local'] == start_year) & 
-                 (df['month_created_timestamp_local'] >= start_month))
-            )
-        else:
-            # Filter by year only
-            ccta_filter = ccta_filter & (df['year_created_at_local'] >= start_year)
+    # Assuming your dataframe has a 'created_timestamp_local' column (datetime)
+    # Adjust the column name if it's different
+    date_column = 'created_timestamp_local'  # Change this to match your actual date column
     
-    if end_year is not None:
-        if end_month is not None:
-            # Filter by year and month
-            ccta_filter = ccta_filter & (
-                (df['year_created_timestamp_local'] < end_year) |
-                ((df['year_created_timestamp_local'] == end_year) & 
-                 (df['month_created_timestamp_local'] <= end_month))
-            )
-        else:
-            # Filter by year only
-            ccta_filter = ccta_filter & (df['year_created_timestamp_local'] <= end_year)
+    if start_date is not None:
+        start_dt = pd.to_datetime(start_date)
+        ccta_filter = ccta_filter & (df[date_column] >= start_dt)
+    
+    if end_date is not None:
+        end_dt = pd.to_datetime(end_date)
+        # Add one day and use < to make end_date inclusive
+        end_dt = end_dt + pd.Timedelta(days=1)
+        ccta_filter = ccta_filter & (df[date_column] < end_dt)
     
     filtered_df = df[ccta_filter]
     
