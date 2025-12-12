@@ -487,7 +487,7 @@ def get_ccta_by(df,
     # Add date filters if provided
     # Assuming your dataframe has a 'created_timestamp_local' column (datetime)
     # Adjust the column name if it's different
-    date_column = 'created_timestamp_local'  # Change this to match your actual date column
+    date_column = 'created_at_local'  # Change this to match your actual date column
     
     if start_date is not None:
         start_dt = pd.to_datetime(start_date)
